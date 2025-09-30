@@ -22,5 +22,5 @@ setup(
     author_email = "sfzuo@bao.ac.cn",
     description = "DSL data processing pipeline.",
     license = "GPL v3.0",
-    url = "https://github.com/DSL/dslpipe",
+    url = "https://github.com/DSL-SDP/dslpipe",
 )
