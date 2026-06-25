@@ -7,6 +7,11 @@ import socket
 class Progress(object):
 
     def __init__(self, length, step=None, prog_msg=None, comm=None):
+        if length <= 0:
+            raise ValueError(
+                "Progress length must be a positive integer, got %r." % length
+            )
+
         if not prog_msg is None:
             self.msg = prog_msg
         else:
@@ -20,11 +25,13 @@ class Progress(object):
             else:
                 step = length // 100
 
-        if length <= 0:
-            self.cnts = []
-        else:
-            num = length // step + 1
-            self.cnts = [ i * step for i in range(num) ]
+        if step <= 0:
+            raise ValueError(
+                "Progress step must be a positive integer, got %r." % step
+            )
+
+        num = length // step + 1
+        self.cnts = [ i * step for i in range(num) ]
 
     def show(self, cnt):
         if cnt in self.cnts:

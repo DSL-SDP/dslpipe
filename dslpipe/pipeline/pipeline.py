@@ -358,6 +358,7 @@ import sys
 import inspect
 import queue
 import collections
+import contextlib
 import os
 from os import path
 import shutil
@@ -1193,69 +1194,95 @@ class OneAndOne(TaskBase):
         return output
 
     def read_process_write(self, input):
-        """Reads input, executes any processing and writes output."""
+        """Read input, run :meth:`process`, then write the output.
 
-        # Read input if needed.
+        The three phases are delegated to small helpers so the public
+        method reads as a straight pipeline. Subclasses should override
+        :meth:`read_input`, :meth:`process` and :meth:`write_output`; the
+        helpers here only handle plumbing (logging, MPI barriers, timing).
+        """
+        input = self._resolve_input(input)
         if input is None and not self._no_input:
-            if self.input_files is None or len(self.input_files) == 0:
-                if mpiutil.rank0:
-                    msg = 'No file to read from, will stop then...'
-                    logger.info(msg)
-                self.stop_iteration(True)
-                return None
-            if mpiutil.rank0:
-                msg = "%s reading data from files:" % self.__class__.__name__
-                for input_file in self.input_files:
-                    msg += '\n\t%s' % input_file
-                logger.info(msg)
-            mpiutil.barrier()
-            input = self.read_input()
+            return None
 
-        # Analyze.
-        if self._no_input:
-            if not input is None:
-                # This should never happen.  Just here to catch bugs.
-                raise RuntimeError("Somehow `input` was set")
-            if self.params['process_timing']:
-                stime = datetime.datetime.now()
-            output = self.process()
-            if self.params['process_timing']:
-                etime = datetime.datetime.now()
-                if mpiutil.rank0:
-                    msg = 'Executing time of %s.process(): %s [ %s - %s ]' % (self.__class__.__name__, etime - stime, stime, etime)
-                    logger.info(msg)
-        else:
-            if input is None:
-                output = None
-            else:
-                if self.params['process_timing']:
-                    stime = datetime.datetime.now()
-                output = self.process(input)
-                if self.params['process_timing']:
-                    etime = datetime.datetime.now()
-                    if mpiutil.rank0:
-                        msg = 'Executing time of %s.process(): %s [ %s - %s ]' % (self.__class__.__name__, etime - stime, stime, etime)
-                        logger.info(msg)
-
-        # Write output if needed.
-        if output is not None and len(self.output_files) != 0:
-            if mpiutil.rank0:
-                msg = "%s writing data to files:" % self.__class__.__name__
-
-                # make output dirs
-                for output_file in self.output_files:
-                    msg += '\n\t%s' % output_file
-                    output_dir = path.dirname(output_file)
-                    if not path.exists(output_dir):
-                        os.makedirs(output_dir)
-
-                logger.info(msg)
-
-            mpiutil.barrier()
-
-            self.write_output(output)
-
+        output = self._run_process(input)
+        self._write_output_if_needed(output)
         return output
+
+    def _resolve_input(self, input):
+        """Return the input to feed into :meth:`process`.
+
+        When the pipeline did not deliver a data product, fall back to
+        reading from :attr:`input_files`. Returns ``None`` when neither
+        source is available, in which case the caller is responsible for
+        deciding what to do (typically stopping iteration).
+        """
+        if input is not None or self._no_input:
+            return input
+
+        if not self.input_files:
+            if mpiutil.rank0:
+                logger.info('No file to read from, will stop then...')
+            self.stop_iteration(force_stop=True)
+            return None
+
+        if mpiutil.rank0:
+            file_list = '\n\t'.join(self.input_files)
+            logger.info("%s reading data from files:\n\t%s"
+                        % (self.__class__.__name__, file_list))
+        mpiutil.barrier()
+        return self.read_input()
+
+    def _run_process(self, input):
+        """Invoke :meth:`process` with the right arity and timing wrapper."""
+        with self._timed_process():
+            if self._no_input:
+                if input is not None:
+                    # Defensive check: a no-input task should never receive one.
+                    raise RuntimeError("Somehow `input` was set")
+                return self.process()
+            if input is None:
+                return None
+            return self.process(input)
+
+    @contextlib.contextmanager
+    def _timed_process(self):
+        """Context manager that times :meth:`process` when configured.
+
+        Wraps the body in :func:`datetime.datetime.now` brackets and logs
+        the elapsed time on rank 0. When ``process_timing`` is disabled,
+        the context manager is essentially a no-op.
+        """
+        if not self.params['process_timing']:
+            yield
+            return
+        stime = datetime.datetime.now()
+        try:
+            yield
+        finally:
+            etime = datetime.datetime.now()
+            if mpiutil.rank0:
+                logger.info(
+                    'Executing time of %s.process(): %s [ %s - %s ]'
+                    % (self.__class__.__name__, etime - stime, stime, etime)
+                )
+
+    def _write_output_if_needed(self, output):
+        """Write ``output`` to :attr:`output_files` when applicable."""
+        if output is None or not self.output_files:
+            return
+
+        if mpiutil.rank0:
+            for output_file in self.output_files:
+                output_dir = path.dirname(output_file)
+                if output_dir and not path.exists(output_dir):
+                    os.makedirs(output_dir)
+            file_list = '\n\t'.join(self.output_files)
+            logger.info("%s writing data to files:\n\t%s"
+                        % (self.__class__.__name__, file_list))
+
+        mpiutil.barrier()
+        self.write_output(output)
 
     def read_input(self):
         """Override to implement reading inputs from disk."""

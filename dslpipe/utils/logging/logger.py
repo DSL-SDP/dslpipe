@@ -270,16 +270,39 @@ def set_default_level(level):
     参数:
         level (LogLevel or int or str): 新的默认级别。可以是
             :class:`LogLevel` 枚举、整数值，或字符串（如 ``"DEBUG"``）。
+
+    抛出:
+        TypeError: 当 ``level`` 不是 ``LogLevel``/``int``/``str`` 时。
+        ValueError: 当字符串或整数无法映射到已知的日志级别时（错误信息
+            会列出所有合法级别名称，便于排查 pipefile 拼写错误）。
     """
     global _default_level
+
+    valid_names = [m.name for m in LogLevel]
 
     if isinstance(level, LogLevel):
         resolved = level
     elif isinstance(level, str):
-        resolved = LogLevel[level.upper()]
+        try:
+            resolved = LogLevel[level.upper()]
+        except KeyError:
+            raise ValueError(
+                f"无效的日志级别字符串: {level!r}。"
+                f"合法值: {', '.join(valid_names)}。"
+            ) from None
+    elif isinstance(level, int) and not isinstance(level, bool):
+        try:
+            resolved = LogLevel(level)
+        except ValueError:
+            raise ValueError(
+                f"无效的日志级别整数值: {level}。"
+                f"合法值: {', '.join(f'{m.name}={m.value}' for m in LogLevel)}。"
+            ) from None
     else:
-        # 允许直接传入 logging 模块的整数值
-        resolved = LogLevel(level)
+        raise TypeError(
+            f"level 参数必须是 LogLevel 枚举、int 或 str，"
+            f"实际收到 {type(level).__name__}: {level!r}。"
+        )
 
     _default_level = resolved
 
@@ -290,26 +313,38 @@ def set_default_level(level):
 
 
 def setup_logging(default_level=LogLevel.INFO, log_dir=None, log_filename=None):
-    """
-    设置全局日志配置
-    
+    """设置全局日志配置。
+
+    该函数做两件事：
+      1. 通过 :func:`set_default_level` 把默认日志级别下发到所有已存在的
+         logger 和后续新创建的 logger（真正"全局"）。
+      2. 在 ``log_dir`` 下创建根 ``dslpipe`` logger（带轮转文件处理器）。
+
+    调用方只需要关心 ``default_level``，不需要再单独调用
+    :func:`set_default_level`，避免级别被双写。
+
     参数:
-        default_level (LogLevel): 默认日志级别
-        log_dir (str): 日志目录，如果为None则使用当前目录下的logs目录
-        log_filename (str): 日志文件名，如果为None则使用dslpipe.log
-    
+        default_level (LogLevel or int or str): 默认日志级别。
+        log_dir (str): 日志目录，如果为 None 则使用当前目录下的 logs 目录。
+        log_filename (str): 日志文件名，如果为 None 则使用 dslpipe.log。
+
     返回:
-        DSLPipeLogger: 根日志记录器实例
+        DSLPipeLogger: 根 dslpipe 日志记录器实例。
     """
+    # 先全局下发默认级别，确保所有 import 时就创建好的 task logger 也跟着
+    # 切到新级别。传 None 给 get_logger 让它走 _default_level 单一来源，
+    # 避免在这里和 set_default_level 内部对同一 logger 二次 setLevel。
+    set_default_level(default_level)
+
     if log_dir is None:
         log_dir = os.path.join(os.getcwd(), 'logs')
-    
+
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    
+
     if log_filename is None:
         log_filename = 'dslpipe.log'
-    
+
     log_file = os.path.join(log_dir, log_filename)
-    
-    return get_logger('dslpipe', default_level, log_file)
+
+    return get_logger('dslpipe', level=None, log_file=log_file)
