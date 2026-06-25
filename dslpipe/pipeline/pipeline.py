@@ -524,12 +524,6 @@ class Manager(object):
 
         """
 
-        # # Set logging level.
-        # numeric_level = getattr(logging, self.params['logging'].upper(), None)
-        # if not isinstance(numeric_level, int):
-        #     raise ValueError('Invalid logging level: %s' % self.logging)
-        # logging.basicConfig(level=numeric_level)
-
         # Flush output or not
         flush = self.params['flush']
 
@@ -806,35 +800,6 @@ class TaskBase(object):
         """
 
         pass
-
-    @property
-    def embarrassingly_parallelizable(self):
-        """Override to return `True` if `next()` is trivially parallelizeable.
-
-        This property tells the pipeline that the problem can be parallelized
-        trivially. This only applies to the `next()` method, which should not
-        change the state of the task.
-
-        If this returns `True`, then the Pipeline will execute `next()` many
-        times  in parallel and handle all the intermediate data efficiently.
-        Otherwise `next()` must be parallelized internally if at all. `setup()`
-        and `finish()` must always be parallelized internally.
-
-        Usage of this has not implemented.
-
-        """
-
-        return False
-
-    @property
-    def cacheable(self):
-        """Override to return `True` if caching results is implemented.
-
-        No caching infrastructure has yet been implemented.
-
-        """
-
-        return False
 
     @property
     def history(self):
@@ -1379,23 +1344,3 @@ def format_list(val):
         return [ val ]
     else:
         return val
-
-
-def _import_class(class_path):
-    """Import class dynamically from a string."""
-    path_split = class_path.split('.')
-    module_path = '.'.join(path_split[:-1])
-    class_name = path_split[-1]
-    if module_path:
-        m = __import__(module_path)
-        for comp in path_split[1:]:
-            m = getattr(m, comp)
-        task_cls = m
-    else:
-        task_cls = globals()[class_name]
-    return task_cls
-
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()
