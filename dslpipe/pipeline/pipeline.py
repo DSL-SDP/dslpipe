@@ -455,6 +455,11 @@ class Manager(object):
         # Save feedback level so it can be forwarded to pipeline tasks.
         self.feedback = feedback
 
+        # closed flag for idempotent close(); set early so close() is safe
+        # to call even if later __init__ code fails (in which case the user
+        # will see the original exception, not a secondary one from close()).
+        self._closed = False
+
         # Read in the parameters.
         self.params, self.task_params = parse_ini.parse(pipefile, self.params_init, prefix=self.prefix, return_undeclared=True, feedback=feedback)
         self.tasks = self.params['tasks']
@@ -615,10 +620,19 @@ class Manager(object):
 
         return task
 
-    def __del__(self):
-        """Finish."""
+    def close(self):
+        """Release resources held by this Manager.
+
+        Cleans up the ``TL_OUTPUT`` environment variable, prints the
+        pipeline timing summary (if enabled) and a final "DONE" banner.
+        This method is idempotent: subsequent calls are no-ops.
+        """
+        if self._closed:
+            return
+        self._closed = True
+
         # remove environment var set earlier
-        del(os.environ['TL_OUTPUT'])
+        os.environ.pop('TL_OUTPUT', None)
 
         # get the running time
         if self.params['timing']:
@@ -660,6 +674,16 @@ class Manager(object):
             logger.info("=           CONGRATULATIONS!!            =")
             logger.info("=                                        =")
             logger.info("==========================================")
+
+    def __enter__(self):
+        """Enter the runtime context — returns the Manager itself."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the runtime context — calls :meth:`close` and lets
+        any in-flight exception propagate."""
+        self.close()
+        return False
 
 
 

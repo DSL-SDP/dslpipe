@@ -11,9 +11,8 @@ import argparse
 
 def run(pipefile, feedback):
     from dslpipe.pipeline.pipeline import Manager
-
-    P = Manager(pipefile, feedback=feedback)
-    P.run()
+    with Manager(pipefile, feedback=feedback) as P:
+        P.run()
 
 
 parser = argparse.ArgumentParser(description='The pipeline manager.')
