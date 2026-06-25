@@ -221,32 +221,72 @@ class LogAnalyzer:
 # 全局日志记录器字典
 _loggers = {}
 
+# 全局默认日志级别：未显式指定 level 时，新创建的 logger 都使用此级别。
+# 可由 Manager.set_default_level 在解析 pipefile 后更新。
+_default_level = LogLevel.INFO
 
-def get_logger(name, level=LogLevel.INFO, log_file=None, max_bytes=10*1024*1024, 
+
+def get_logger(name, level=None, log_file=None, max_bytes=10*1024*1024,
                backup_count=5, format_str=None, console_output=True):
     """
     获取日志记录器
-    
+
     参数:
         name (str): 日志记录器名称
-        level (LogLevel): 日志级别
+        level (LogLevel or int or None): 日志级别。为 None 时使用全局默认级别
+            (可通过 :func:`set_default_level` 设置)。
         log_file (str): 日志文件路径，如果为None则不记录到文件
         max_bytes (int): 单个日志文件最大字节数
-        backup_count (int): 备份日志文件数量
+        backup_count (int): 备份日志数量
         format_str (str): 日志格式字符串
         console_output (bool): 是否输出到控制台
-    
+
     返回:
         DSLPipeLogger: 日志记录器实例
     """
     global _loggers
-    
+
     if name not in _loggers:
+        effective_level = level if level is not None else _default_level
         _loggers[name] = DSLPipeLogger(
-            name, level, log_file, max_bytes, backup_count, format_str, console_output
+            name, effective_level, log_file, max_bytes, backup_count, format_str, console_output
         )
-    
+    elif level is not None:
+        # 调用方显式给了 level：尊重显式设置，更新已存在 logger 的级别
+        resolved = level.value if isinstance(level, LogLevel) else level
+        _loggers[name].level = resolved
+        _loggers[name].logger.setLevel(resolved)
+
     return _loggers[name]
+
+
+def set_default_level(level):
+    """设置全局默认日志级别，并同步更新所有已存在的 logger。
+
+    应在解析 pipefile 中的 ``logging`` 参数后立即调用，以便把级别下发到
+    所有已通过 ``import`` 创建的 task logger，以及后续通过 ``get_logger``
+    动态创建的新 logger。
+
+    参数:
+        level (LogLevel or int or str): 新的默认级别。可以是
+            :class:`LogLevel` 枚举、整数值，或字符串（如 ``"DEBUG"``）。
+    """
+    global _default_level
+
+    if isinstance(level, LogLevel):
+        resolved = level
+    elif isinstance(level, str):
+        resolved = LogLevel[level.upper()]
+    else:
+        # 允许直接传入 logging 模块的整数值
+        resolved = LogLevel(level)
+
+    _default_level = resolved
+
+    # 同步更新所有已存在 logger（这些通常是 task 模块 import 时创建的）
+    for lg in _loggers.values():
+        lg.level = resolved.value
+        lg.logger.setLevel(resolved.value)
 
 
 def setup_logging(default_level=LogLevel.INFO, log_dir=None, log_filename=None):

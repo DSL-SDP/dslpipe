@@ -462,8 +462,10 @@ class Manager(object):
         # set logging level
         logging_level = getattr(LogLevel, self.params['logging'].upper(), None)
         if logging_level:
-            logger.level = logging_level.value
-            logger.logger.setLevel(logging_level.value)
+            # 下发到全局默认级别：覆盖所有已通过 import 创建的 task logger，
+            # 并影响后续动态创建的 logger。当前模块的 logger 也会被覆盖。
+            from dslpipe.utils.logging import set_default_level
+            set_default_level(logging_level)
 
         # timing the running
         if self.params['timing']:

@@ -6,6 +6,7 @@
 from .logger import (
     get_logger,
     setup_logging,
+    set_default_level,
     LogLevel,
     LogAnalyzer
 )
@@ -13,6 +14,7 @@ from .logger import (
 __all__ = [
     'get_logger',
     'setup_logging',
+    'set_default_level',
     'LogLevel',
     'LogAnalyzer'
 ]
