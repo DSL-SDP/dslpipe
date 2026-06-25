@@ -452,6 +452,9 @@ class Manager(object):
 
     def __init__(self, pipefile=None, feedback=2):
 
+        # Save feedback level so it can be forwarded to pipeline tasks.
+        self.feedback = feedback
+
         # Read in the parameters.
         self.params, self.task_params = parse_ini.parse(pipefile, self.params_init, prefix=self.prefix, return_undeclared=True, feedback=feedback)
         self.tasks = self.params['tasks']
@@ -606,7 +609,7 @@ class Manager(object):
         if mpiutil.rank0:
             logger.info('Initializing task: ' + str(task))
 
-        task = task(self.task_params)
+        task = task(self.task_params, feedback=self.feedback)
 
         return task
 

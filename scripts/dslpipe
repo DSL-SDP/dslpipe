@@ -9,16 +9,17 @@ the path to a pipeline file.
 import argparse
 
 
-def run(pipefile):
+def run(pipefile, feedback):
     from dslpipe.pipeline.pipeline import Manager
 
-    P = Manager(pipefile)
+    P = Manager(pipefile, feedback=feedback)
     P.run()
 
 
 parser = argparse.ArgumentParser(description='The pipeline manager.')
 parser.add_argument('pipefile', type=str, nargs='?', help='Input parameter setting file to run the pipeline.')
+parser.add_argument('--feedback', type=int, default=2, help='Feedback level passed to Manager and tasks (1-10, default: 2).')
 parser.set_defaults(func=run)
 
 args = parser.parse_args()
-args.func(args.pipefile)
+args.func(args.pipefile, args.feedback)
