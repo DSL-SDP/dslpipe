@@ -216,26 +216,31 @@ def _execute_parameter_file(this_parameter_file_name):
     Executes python script in named file and returns dictionary of variables
     declared in that file.
     """
-    
+
     # Only a few locally defined variables and all have a long name to avoid
     # namespace conflicts.
 
     # Execute the filename which presumably holds a python script. This will
     # bring the parameters defined there into the local scope.
+    # Pass a fresh globals dict that sets ``__file__`` to the parameter file
+    # itself so that the .pipe script can use ``__file__`` to resolve paths
+    # relative to its own location, regardless of the caller's cwd or the
+    # module that triggered the exec (otherwise ``__file__`` would resolve to
+    # this module's path).
+    pipe_globals = {'__file__': this_parameter_file_name, '__name__': '__pipe__'}
+
     try:
         with open(this_parameter_file_name, 'r') as f:
-            exec(f.read())
+            exec(f.read(), pipe_globals)
     except Exception as E:
         msg = ("Execution of parameter file " + this_parameter_file_name +
                " caused an error.  The error message was: " + repr(E))
         raise ce.ParameterFileError(msg)
-    # Store the local scope as a dictionary.
-    out = locals()
-    # Delete all entries of out that correspond to variables defined in this
-    # function (i.e. not in the read file).
-    del out['this_parameter_file_name']
-    # Return the dictionary of parameters read from file.
-    return out
+    # Drop the synthetic entries we injected; the rest are the parameters
+    # defined in the .pipe file.
+    pipe_globals.pop('__file__', None)
+    pipe_globals.pop('__name__', None)
+    return pipe_globals
 
 def write_params(params, file_name, prefix='', mode='w') :
     """Write a parameter dictionary to file.
